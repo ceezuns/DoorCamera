@@ -1,10 +1,10 @@
 from person import Person
 from camera import Camera
-import json
+import configuration
 
 def main():
     # Initialize a camera
-    camera = Camera(device_id, persons)
+    camera = Camera()
     # Read from this camera.
     camera.read()
 

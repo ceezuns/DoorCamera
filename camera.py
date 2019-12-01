@@ -1,18 +1,17 @@
-import cv2, face_recognition, numpy, time, os, telegram, io.BytesIO, configuration
+import cv2, face_recognition, numpy, time, os, telegram, configuration
+from io import BytesIO
 
 class Camera:
 
     def __init__(self):
         # Use OpenCV to get video from the camera.
         self.camera = cv2.VideoCapture(configuration.camera["device_id"])
-        # Store persons to recognize
-        self.persons = persons
         # Initialize telegram bot.
-        self.bot = telegram.Bot(token)
+        self.bot = telegram.Bot(configuration.telegram["token"])
         # Create a list of known encodings and names
         self.known_encodings = []
         self.known_names = []
-        for person in self.persons:
+        for person in configuration.persons:
             self.known_names.append(person.name)
             self.known_encodings.append(person.face_encoding)
 
@@ -23,6 +22,7 @@ class Camera:
         frame_face_encodings = face_recognition.face_encodings(frame)
         # Empty list, that will be used later to put names of the persons
         frame_face_names = []
+        frame_face_names_append = frame_face_names.append
 
         # Loop through every face encoding
         for frame_face_encoding in frame_face_encodings:
@@ -38,13 +38,16 @@ class Camera:
                 # Set the name to the match
                 name = self.known_names[best_match]
                 # Append it to the list of names that match in the frame.
-                frame_face_names.append(name)
+                frame_face_names_append(name)
             else:
                 # If there is a face that does not match any known persons, set them as unknown.
                 frame_face_names.append("Unknown")
             
         # Call the method to send a notification to the Telegram Chat.
-        self.send_notification(frame_face_names, frame)
+        if self.last_known_names == names:
+            pass
+        else:
+            self.send_notification(frame_face_names, frame)
 
 
     def read(self):
@@ -63,25 +66,23 @@ class Camera:
         self.camera.release()
 
     def send_notification(self, names, frame):
-        # Pass if the detected names are the same as the previously known names.
-        if self.last_known_names == names:
-            pass
         # Check if the number of names detected is greater than zero.
-        elif len(names) > 0:
+        if len(names) > 0:
             # Create the string of name(s) detected.
-            data = ""
-            for i, item in enumerate(names):
-                if i:
-                    data += " and "
-                data += item
-            if len(names) == 1:
-                data += " is at the door."
-            else:
-                data += " are at the door."
-            # Send a message of the name(s) at the door.
-            self.bot.send_message(chat_id=self.chat_id, text=data)
-            # Send a photo of the door at the time.
-            self.bot.send_photo(chat_id=self.chat_id, photo=BytesIO(cv2.imencode(".jpg", frame[:, :, ::-1])[1]))
+            data = [data.join(" and ") if index else data.join(name) for index, name in enumerate(names)] + [data.join("is at the door.") if len(names) == 1 else data.join(" are at the door.")]
+            # Find out who is not in the picture, to send them the message.
+            people_to_send_message_to = compare_names(names, self.last_known_names)
+
+            for person in people_to_send_message_to:
+                # Send a message of the name(s) at the door.
+                self.bot.send_message(chat_id=person.telegram_uid, text=data)
+                # Send a photo of the door at the time.
+                self.bot.send_photo(chat_id=person.telegram_uid, photo=BytesIO(cv2.imencode(".jpg", frame[:, :, ::-1])[1]))
         # Reset the last known names once new names are detected.
         if len(names) > 0 and self.last_known_names != names:
             self.last_known_names = names
+
+        time.sleep(60)
+
+    def compare_names(first, second):
+        return (list(set(first) - set(second)))
