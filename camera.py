@@ -11,6 +11,7 @@ class Camera:
         # Create a list of known encodings and names
         self.known_encodings = []
         self.known_names = []
+        self.last_known_names = []
         for person in configuration.persons:
             self.known_names.append(person.name)
             self.known_encodings.append(person.face_encoding)
@@ -41,10 +42,10 @@ class Camera:
                 frame_face_names_append(name)
             else:
                 # If there is a face that does not match any known persons, set them as unknown.
-                frame_face_names.append("Unknown")
+                frame_face_names_append("Unknown")
             
         # Call the method to send a notification to the Telegram Chat.
-        if self.last_known_names == names:
+        if self.last_known_names == frame_face_names:
             pass
         else:
             self.send_notification(frame_face_names, frame)
@@ -53,11 +54,12 @@ class Camera:
     def read(self):
         while self.camera.isOpened():
             # Read frame from OpenCV
-            response, frame = self.camera.read()[:, :, ::-1]
+            response, frame = self.camera.read()
             # Check if the camera responds
             if response == True:
                 # Edit the frame to 1/4th the size of its original for faster processing.
-                edited_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+                edited_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                edited_frame = cv2.resize(edited_frame, (0, 0), fx=0.25, fy=0.25)
                 # Facial Recognition
                 self.recognize_faces(edited_frame)
             # Sleep for 0.45 of a second.
@@ -67,22 +69,34 @@ class Camera:
 
     def send_notification(self, names, frame):
         # Check if the number of names detected is greater than zero.
+        print(names)
         if len(names) > 0:
             # Create the string of name(s) detected.
-            data = [data.join(" and ") if index else data.join(name) for index, name in enumerate(names)] + [data.join("is at the door.") if len(names) == 1 else data.join(" are at the door.")]
+            data = ""
+            for name in names:
+                if len(data) > 0:
+                    data += " and "
+                data += name
+            if len(names) == 1:
+                data += " is at the door."
+            else:
+                data += " are at the door."
             # Find out who is not in the picture, to send them the message.
-            people_to_send_message_to = compare_names(names, self.last_known_names)
-
+            people_to_send_message_to = self.known_names.copy()
+            for name in names:
+                if name in people_to_send_message_to:
+                    people_to_send_message_to.remove(name)
             for person in people_to_send_message_to:
                 # Send a message of the name(s) at the door.
-                self.bot.send_message(chat_id=person.telegram_uid, text=data)
+                self.bot.send_message(chat_id=self.get_person(person).telegram_uid, text=data)
                 # Send a photo of the door at the time.
-                self.bot.send_photo(chat_id=person.telegram_uid, photo=BytesIO(cv2.imencode(".jpg", frame[:, :, ::-1])[1]))
+                self.bot.send_photo(chat_id=self.get_person(person).telegram_uid, photo=BytesIO(cv2.imencode(".png", frame[:, :, ::-1])[1]))
         # Reset the last known names once new names are detected.
         if len(names) > 0 and self.last_known_names != names:
             self.last_known_names = names
 
-        time.sleep(60)
-
-    def compare_names(first, second):
-        return (list(set(first) - set(second)))
+    def get_person(self, name):
+        for person in configuration.persons:
+            if person.name == name:
+                return person
+        return None
