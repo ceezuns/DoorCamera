@@ -15,6 +15,7 @@ class Camera:
         for person in configuration.persons:
             self.known_names.append(person.name)
             self.known_encodings.append(person.face_encoding)
+        self.known_names = tuple(self.known_names)
 
     def recognize_faces(self, frame):
         # Detect face locations in the current frame.
